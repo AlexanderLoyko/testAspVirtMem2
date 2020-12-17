@@ -34,8 +34,22 @@ static constexpr size_t codeCacheBytes = 1024; // instructions cache size in byt
 static Word ToWordAddr(Word addr) { return addr >> 2u; }
 static Word ToLineAddr(Word addr) { return addr & ~(lineSizeBytes - 1); }
 static Word ToLineOffset(Word addr) { return ToWordAddr(addr) & (lineSizeWords - 1); }
-/*static Word ToPageAddr(Word addr) { return (addr & ~(pageSizeB - 1)) / pageSizeB; }
-static Word ToPageOffset(Word addr) { return ToWordAddr(addr) & (pageSizeW - 1);}*/
+
+static Word ToPageAddr(Word addr) {
+    return (addr & ~(pageSizeB - 1)) / pageSizeB;
+
+}
+static Word ToPageOffset(Word addr) {
+    return ToWordAddr(addr) & (pageSizeW - 1);
+}
+
+static Word ToPageAddr2(Word addr) {
+    return addr / pageSizeW;;
+}
+
+static Word ToPageOffset2(Word addr) {
+    return addr - ToPageAddr2(addr) * pageSizeW;
+}
 
 class FifoAlg {
 private:
@@ -65,7 +79,7 @@ public:
         }
     }
 
-    Word getOlderPageNumVirtualFromMainMemory() {
+    Word getOldestPageNumVirtualFromMainMemory() {
         return queueOfRecordsInMainMemory[0];
     }
 
@@ -84,8 +98,8 @@ public:
         _mem.resize(mainMemorySizeW);
         virtual_memory.resize(virtualMemorySizeW);
 
+        // [0] - pageNumInVirtualMemory, [1] = pageNumInMainMemory, [2] = validBit
         for (Word i = 0; i < (virtualMemorySizeW / pageSizeW); i++) {
-            // [0] - pageNumInVirtualMemory, [1] = pageNumInMainMemory, [2] = validBit
             pageTable[i].push_back(i);
             pageTable[i].push_back(0);
             pageTable[i].push_back(0);
@@ -144,14 +158,12 @@ public:
 
     Word Read(Word ip) {
         //return _mem[ToWordAddr(ip)];
-
         return _mem[GetPhysicalLocation(ip)];
     }
 
     void Write(Word ip, Word data)
     {
         //_mem[ToWordAddr(ip)] = data;
-
         _mem[GetPhysicalLocation(ip)] = data;
     }
 
@@ -171,7 +183,7 @@ public:
         pageTable[pageNumInVirtualMemory][2] = true;
 
         if (fifoAlg.getIsMemoryFull()) {
-            Word pageNumVirtualForRewrite = fifoAlg.getOlderPageNumVirtualFromMainMemory();
+            Word pageNumVirtualForRewrite = fifoAlg.getOldestPageNumVirtualFromMainMemory();
             Word pageNumPhysicalForRewrite = pageTable[pageNumVirtualForRewrite][1];
 
             pageTable[pageNumVirtualForRewrite][2]  = false;
@@ -190,26 +202,7 @@ public:
         RecordPageFromVirtualMemoryToMainMemory(pageNumInVirtualMemory);
     }
 
-    Word ToPageAddr(Word addr) {
-        return (addr & ~(pageSizeB - 1)) / pageSizeB;
-    }
-
-    Word ToPageOffset(Word addr) {
-        return ToWordAddr(addr) & (pageSizeW - 1);
-    }
-
-    Word ToPageAddr2(Word addr) {
-        return addr / pageSizeW;;
-    }
-
-    Word ToPageOffset2(Word addr) {
-        return addr - ToPageAddr2(addr) * pageSizeW;
-    }
-
     Word GetPhysicalLocation(Word virtualLocation) {
-        //Word pageNumInVirtualMemory = virtualLocation / pageSizeW;
-        //Word offsetInPage = virtualLocation - (virtualLocation / pageSizeW) * pageSizeW;
-
         Word pageNumInVirtualMemory = ToPageAddr(virtualLocation);
         Word offsetInPage = ToPageOffset(virtualLocation);
         //Word pageNumInVirtualMemory = ToPageAddr2(ToWordAddr(virtualLocation));
@@ -263,9 +256,7 @@ private:
 
     vector<Word> _mem;
     vector<Word> virtual_memory;
-
-    // [0] - pageNumInVirtualMemory, [1] = pageNumInMainMemory, [2] = validBit
-    vector<Word> pageTable[virtualMemorySizeW / pageSizeW];
+    vector<Word> pageTable[virtualMemorySizeW / pageSizeW]; // [0] - pageNumInVirtualMemory, [1] = pageNumInMainMemory, [2] = validBit
     FifoAlg fifoAlg;
 };
 
