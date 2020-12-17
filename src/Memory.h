@@ -210,10 +210,10 @@ public:
         //Word pageNumInVirtualMemory = virtualLocation / pageSizeW;
         //Word offsetInPage = virtualLocation - (virtualLocation / pageSizeW) * pageSizeW;
 
-        //Word pageNumInVirtualMemory = ToPageAddr(virtualLocation);
-        //Word offsetInPage = ToPageOffset(virtualLocation);
-        Word pageNumInVirtualMemory = ToPageAddr2(ToWordAddr(virtualLocation));
-        Word offsetInPage = ToPageOffset2(ToWordAddr(virtualLocation));
+        Word pageNumInVirtualMemory = ToPageAddr(virtualLocation);
+        Word offsetInPage = ToPageOffset(virtualLocation);
+        //Word pageNumInVirtualMemory = ToPageAddr2(ToWordAddr(virtualLocation));
+        //Word offsetInPage = ToPageOffset2(ToWordAddr(virtualLocation));
 
         if (pageTable[pageNumInVirtualMemory][2] == false) {
             LoadPageIntoMemory(pageNumInVirtualMemory);
