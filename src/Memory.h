@@ -15,6 +15,7 @@
 #include <time.h>
 #include <algorithm>
 #include <array>
+#include <list>
 
 using namespace std;
 
@@ -22,6 +23,7 @@ using namespace std;
 static constexpr size_t mainMemorySizeW = 1024*1024; // memory size in 4-byte words
 static constexpr size_t virtualMemorySizeW = 1024*1024*4;
 static constexpr size_t pageSizeW = 1024;
+static constexpr size_t pageSizeB = pageSizeW * 4;
 
 static constexpr size_t lineSizeBytes = 128;
 static constexpr size_t lineSizeWords = lineSizeBytes / sizeof(Word);
@@ -32,6 +34,8 @@ static constexpr size_t codeCacheBytes = 1024; // instructions cache size in byt
 static Word ToWordAddr(Word addr) { return addr >> 2u; }
 static Word ToLineAddr(Word addr) { return addr & ~(lineSizeBytes - 1); }
 static Word ToLineOffset(Word addr) { return ToWordAddr(addr) & (lineSizeWords - 1); }
+/*static Word ToPageAddr(Word addr) { return (addr & ~(pageSizeB - 1)) / pageSizeB; }
+static Word ToPageOffset(Word addr) { return ToWordAddr(addr) & (pageSizeW - 1);}*/
 
 class FifoAlg {
 private:
@@ -76,7 +80,6 @@ public:
 
 class MemoryStorage {
 public:
-
     MemoryStorage() {
         _mem.resize(mainMemorySizeW);
         virtual_memory.resize(virtualMemorySizeW);
@@ -142,19 +145,14 @@ public:
     Word Read(Word ip) {
         //return _mem[ToWordAddr(ip)];
 
-        Word transofrmIP = GetPhysicalLocation(ToWordAddr(ip));
-
-        //(ip & ~(pageByteSize - 1)) / pageByteSize;
-
-        return _mem[transofrmIP];
+        return _mem[GetPhysicalLocation(ip)];
     }
 
     void Write(Word ip, Word data)
     {
         //_mem[ToWordAddr(ip)] = data;
 
-        Word transofrmIP = GetPhysicalLocation(ToWordAddr(ip));
-        _mem[transofrmIP] = data;
+        _mem[GetPhysicalLocation(ip)] = data;
     }
 
     void RecordPageFromMainMemoryToVirtualMemory(Word pageNumVirtualForRewrite) {
@@ -192,14 +190,34 @@ public:
         RecordPageFromVirtualMemoryToMainMemory(pageNumInVirtualMemory);
     }
 
+    Word ToPageAddr(Word addr) {
+        return (addr & ~(pageSizeB - 1)) / pageSizeB;
+    }
+
+    Word ToPageOffset(Word addr) {
+        return ToWordAddr(addr) & (pageSizeW - 1);
+    }
+
+    Word ToPageAddr2(Word addr) {
+        return addr / pageSizeW;;
+    }
+
+    Word ToPageOffset2(Word addr) {
+        return addr - ToPageAddr2(addr) * pageSizeW;
+    }
+
     Word GetPhysicalLocation(Word virtualLocation) {
-        Word pageNumInVirtualMemory = virtualLocation / pageSizeW;
+        //Word pageNumInVirtualMemory = virtualLocation / pageSizeW;
+        //Word offsetInPage = virtualLocation - (virtualLocation / pageSizeW) * pageSizeW;
+
+        //Word pageNumInVirtualMemory = ToPageAddr(virtualLocation);
+        //Word offsetInPage = ToPageOffset(virtualLocation);
+        Word pageNumInVirtualMemory = ToPageAddr2(ToWordAddr(virtualLocation));
+        Word offsetInPage = ToPageOffset2(ToWordAddr(virtualLocation));
 
         if (pageTable[pageNumInVirtualMemory][2] == false) {
             LoadPageIntoMemory(pageNumInVirtualMemory);
         }
-
-        Word offsetInPage = virtualLocation - (virtualLocation / pageSizeW) * pageSizeW;
 
         return pageTable[pageNumInVirtualMemory][1] * pageSizeW + offsetInPage;
     }
@@ -499,3 +517,4 @@ private:
 };*/
 
 #endif //RISCV_SIM_DATAMEMORY_H
+

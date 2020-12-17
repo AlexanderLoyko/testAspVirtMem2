@@ -69,6 +69,8 @@ algorithm
 -
 array
 -
+list
+-
 
 /Users/alexander/Documents/BSUIR/kulsha3/Lab3_start_virt_mem_2/src/PoolAllocator.h
 cstddef
