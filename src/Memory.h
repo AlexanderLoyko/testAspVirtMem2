@@ -142,7 +142,10 @@ public:
     Word Read(Word ip) {
         //return _mem[ToWordAddr(ip)];
 
-        Word transofrmIP = GetPhysicalLocation(ip);
+        Word transofrmIP = GetPhysicalLocation(ToWordAddr(ip));
+
+        //(ip & ~(pageByteSize - 1)) / pageByteSize;
+
         return _mem[transofrmIP];
     }
 
@@ -150,7 +153,7 @@ public:
     {
         //_mem[ToWordAddr(ip)] = data;
 
-        Word transofrmIP = GetPhysicalLocation(ip);
+        Word transofrmIP = GetPhysicalLocation(ToWordAddr(ip));
         _mem[transofrmIP] = data;
     }
 
