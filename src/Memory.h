@@ -139,11 +139,10 @@ public:
         }
     }
 
-    Word Read(Word ip)
-    {
+    Word Read(Word ip) {
         //return _mem[ToWordAddr(ip)];
 
-        Word transofrmIP = GetPhysicalLocation(ToWordAddr(ip));
+        Word transofrmIP = GetPhysicalLocation(ip);
         return _mem[transofrmIP];
     }
 
@@ -151,8 +150,8 @@ public:
     {
         //_mem[ToWordAddr(ip)] = data;
 
-        Word transofrmIP = GetPhysicalLocation(ToWordAddr(ip));
-        _mem[GetPhysicalLocation(ToWordAddr(ip))] = data;
+        Word transofrmIP = GetPhysicalLocation(ip);
+        _mem[transofrmIP] = data;
     }
 
     void RecordPageFromMainMemoryToVirtualMemory(Word pageNumVirtualForRewrite) {
@@ -243,6 +242,8 @@ private:
 
     vector<Word> _mem;
     vector<Word> virtual_memory;
+
+    // [0] - pageNumInVirtualMemory, [1] = pageNumInMainMemory, [2] = validBit
     vector<Word> pageTable[virtualMemorySizeW / pageSizeW];
     FifoAlg fifoAlg;
 };
