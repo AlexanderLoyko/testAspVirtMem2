@@ -31,13 +31,16 @@ using Line = std::array<Word, lineSizeWords>;
 using TagClockPair = std::pair<size_t , clock_t>;
 static constexpr size_t dataCacheBytes = 2048; // data cache size in bytes
 static constexpr size_t codeCacheBytes = 1024; // instructions cache size in bytes
-static Word ToWordAddr(Word addr) { return addr >> 2u; }
 static Word ToLineAddr(Word addr) { return addr & ~(lineSizeBytes - 1); }
+
+static Word ToWordAddr(Word addr) {
+    return addr >> 2u;
+}
+
 static Word ToLineOffset(Word addr) { return ToWordAddr(addr) & (lineSizeWords - 1); }
 
 static Word ToPageAddr(Word addr) {
     return (addr & ~(pageSizeB - 1)) / pageSizeB;
-
 }
 static Word ToPageOffset(Word addr) {
     return ToWordAddr(addr) & (pageSizeW - 1);
@@ -53,34 +56,34 @@ static Word ToPageOffset2(Word addr) {
 
 class FifoAlg {
 private:
-    vector<Word> queueOfRecordsInMainMemory;
+    vector<Word> queueRecords;
     Word countFilledPagesInMainMemory;
     bool isMemoryFull;
 
 public:
     FifoAlg() {
-        queueOfRecordsInMainMemory.resize(mainMemorySizeW / pageSizeW);
+        queueRecords.resize(mainMemorySizeW / pageSizeW);
         countFilledPagesInMainMemory = 0;
         isMemoryFull = false;
     }
 
     void NewRecordInMainMemory(Word pageNumVirtual) {
-        if (countFilledPagesInMainMemory < queueOfRecordsInMainMemory.size()) {
-            queueOfRecordsInMainMemory[countFilledPagesInMainMemory] = pageNumVirtual;
+        if (countFilledPagesInMainMemory < queueRecords.size()) {
+            queueRecords[countFilledPagesInMainMemory] = pageNumVirtual;
             countFilledPagesInMainMemory++;
 
-            if (countFilledPagesInMainMemory == queueOfRecordsInMainMemory.size()) {
+            if (countFilledPagesInMainMemory == queueRecords.size()) {
                 isMemoryFull = true;
             }
         }
         else {
-            queueOfRecordsInMainMemory.erase(queueOfRecordsInMainMemory.begin());
-            queueOfRecordsInMainMemory.push_back(pageNumVirtual);
+            queueRecords.erase(queueRecords.begin());
+            queueRecords.push_back(pageNumVirtual);
         }
     }
 
     Word getOldestPageNumVirtualFromMainMemory() {
-        return queueOfRecordsInMainMemory[0];
+        return queueRecords[0];
     }
 
     bool getIsMemoryFull() {
@@ -167,10 +170,10 @@ public:
         _mem[GetPhysicalLocation(ip)] = data;
     }
 
-    void RecordPageFromMainMemoryToVirtualMemory(Word pageNumVirtualForRewrite) {
-        copy(_mem.begin() + pageTable[pageNumVirtualForRewrite][1] * pageSizeW,
-             (_mem.begin() + pageTable[pageNumVirtualForRewrite][1] * pageSizeW) + pageSizeW,
-             virtual_memory.begin() + pageNumVirtualForRewrite * pageSizeW);
+    void RecordPageFromMainMemoryToVirtualMemory(Word pageNumVirtualForDelete) {
+        copy(_mem.begin() + pageTable[pageNumVirtualForDelete][1] * pageSizeW,
+             (_mem.begin() + pageTable[pageNumVirtualForDelete][1] * pageSizeW) + pageSizeW,
+             virtual_memory.begin() + pageNumVirtualForDelete * pageSizeW);
     }
 
     void RecordPageFromVirtualMemoryToMainMemory(Word pageNumVirtual) {
@@ -179,40 +182,40 @@ public:
              _mem.begin() + pageTable[pageNumVirtual][1] * pageSizeW);
     }
 
-    void LoadPageIntoMemory(Word pageNumInVirtualMemory) {
-        pageTable[pageNumInVirtualMemory][2] = true;
+    void LoadPageIntoMemory(Word pageNumVirtual) {
+        pageTable[pageNumVirtual][2] = true;
 
         if (fifoAlg.getIsMemoryFull()) {
-            Word pageNumVirtualForRewrite = fifoAlg.getOldestPageNumVirtualFromMainMemory();
-            Word pageNumPhysicalForRewrite = pageTable[pageNumVirtualForRewrite][1];
+            Word pageNumVirtualForDelete = fifoAlg.getOldestPageNumVirtualFromMainMemory();
+            Word pageNumPhysicalForRewrite = pageTable[pageNumVirtualForDelete][1];
 
-            pageTable[pageNumVirtualForRewrite][2]  = false;
+            pageTable[pageNumVirtualForDelete][2]  = false;
 
-            fifoAlg.NewRecordInMainMemory(pageNumInVirtualMemory);
+            fifoAlg.NewRecordInMainMemory(pageNumVirtual);
 
-            pageTable[pageNumInVirtualMemory][1] = pageNumPhysicalForRewrite;
+            pageTable[pageNumVirtual][1] = pageNumPhysicalForRewrite;
 
-            RecordPageFromMainMemoryToVirtualMemory(pageNumVirtualForRewrite);
+            RecordPageFromMainMemoryToVirtualMemory(pageNumVirtualForDelete);
         }
         else {
-            pageTable[pageNumInVirtualMemory][1] = fifoAlg.IndexEmptyPageInMainMemory();
-            fifoAlg.NewRecordInMainMemory(pageNumInVirtualMemory);
+            pageTable[pageNumVirtual][1] = fifoAlg.IndexEmptyPageInMainMemory();
+            fifoAlg.NewRecordInMainMemory(pageNumVirtual);
         }
 
-        RecordPageFromVirtualMemoryToMainMemory(pageNumInVirtualMemory);
+        RecordPageFromVirtualMemoryToMainMemory(pageNumVirtual);
     }
 
     Word GetPhysicalLocation(Word virtualLocation) {
-        Word pageNumInVirtualMemory = ToPageAddr(virtualLocation);
+        Word pageNumVirtual = ToPageAddr(virtualLocation);
         Word offsetInPage = ToPageOffset(virtualLocation);
-        //Word pageNumInVirtualMemory = ToPageAddr2(ToWordAddr(virtualLocation));
+        //Word pageNumVirtual = ToPageAddr2(ToWordAddr(virtualLocation));
         //Word offsetInPage = ToPageOffset2(ToWordAddr(virtualLocation));
 
-        if (pageTable[pageNumInVirtualMemory][2] == false) {
-            LoadPageIntoMemory(pageNumInVirtualMemory);
+        if (pageTable[pageNumVirtual][2] == false) {
+            LoadPageIntoMemory(pageNumVirtual);
         }
 
-        return pageTable[pageNumInVirtualMemory][1] * pageSizeW + offsetInPage;
+        return pageTable[pageNumVirtual][1] * pageSizeW + offsetInPage;
     }
 
 private:
@@ -256,7 +259,7 @@ private:
 
     vector<Word> _mem;
     vector<Word> virtual_memory;
-    vector<Word> pageTable[virtualMemorySizeW / pageSizeW]; // [0] - pageNumInVirtualMemory, [1] = pageNumInMainMemory, [2] = validBit
+    vector<Word> pageTable[virtualMemorySizeW / pageSizeW]; // [0] - pageNumVirtual, [1] = pageNumPhysical, [2] = validBit
     FifoAlg fifoAlg;
 };
 
