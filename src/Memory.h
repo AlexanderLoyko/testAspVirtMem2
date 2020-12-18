@@ -20,11 +20,6 @@
 using namespace std;
 
 //static constexpr size_t memSize = 4*1024*1024; // memory size in 4-byte words
-static constexpr size_t mainMemorySizeW = 1024*1024; // memory size in 4-byte words
-static constexpr size_t virtualMemorySizeW = 1024*1024*4;
-static constexpr size_t pageSizeW = 1024;
-static constexpr size_t pageSizeB = pageSizeW * 4;
-
 static constexpr size_t lineSizeBytes = 128;
 static constexpr size_t lineSizeWords = lineSizeBytes / sizeof(Word);
 using Line = std::array<Word, lineSizeWords>;
@@ -33,11 +28,14 @@ static constexpr size_t dataCacheBytes = 2048; // data cache size in bytes
 static constexpr size_t codeCacheBytes = 1024; // instructions cache size in bytes
 static Word ToLineAddr(Word addr) { return addr & ~(lineSizeBytes - 1); }
 
+static constexpr size_t mainMemorySizeW = 1024*1024; // memory size in 4-byte words
+static constexpr size_t virtualMemorySizeW = 1024*1024*1024;
+static constexpr size_t pageSizeW = 1024;
+static constexpr size_t pageSizeB = pageSizeW * 4;
+
 static Word ToWordAddr(Word addr) {
     return addr >> 2u;
 }
-
-static Word ToLineOffset(Word addr) { return ToWordAddr(addr) & (lineSizeWords - 1); }
 
 static Word ToPageAddr(Word addr) {
     return (addr & ~(pageSizeB - 1)) / pageSizeB;
@@ -90,7 +88,7 @@ public:
         return isMemoryFull;
     }
 
-    Word IndexEmptyPageInMainMemory() {
+    Word getCountFilledPagesInMainMemory() {
         return countFilledPagesInMainMemory;
     }
 };
@@ -104,7 +102,7 @@ public:
         // [0] - pageNumInVirtualMemory, [1] = pageNumInMainMemory, [2] = validBit
         for (Word i = 0; i < (virtualMemorySizeW / pageSizeW); i++) {
             pageTable[i].push_back(i);
-            pageTable[i].push_back(0);
+            pageTable[i].push_back(-1);
             pageTable[i].push_back(0);
         }
     }
@@ -183,22 +181,18 @@ public:
     }
 
     void LoadPageIntoMemory(Word pageNumVirtual) {
-        pageTable[pageNumVirtual][2] = true;
-
         if (fifoAlg.getIsMemoryFull()) {
             Word pageNumVirtualForDelete = fifoAlg.getOldestPageNumVirtualFromMainMemory();
             Word pageNumPhysicalForRewrite = pageTable[pageNumVirtualForDelete][1];
-
             pageTable[pageNumVirtualForDelete][2]  = false;
-
             fifoAlg.NewRecordInMainMemory(pageNumVirtual);
-
             pageTable[pageNumVirtual][1] = pageNumPhysicalForRewrite;
-
+            pageTable[pageNumVirtual][2] = true;
             RecordPageFromMainMemoryToVirtualMemory(pageNumVirtualForDelete);
         }
         else {
-            pageTable[pageNumVirtual][1] = fifoAlg.IndexEmptyPageInMainMemory();
+            pageTable[pageNumVirtual][1] = fifoAlg.getCountFilledPagesInMainMemory();
+            pageTable[pageNumVirtual][2] = true;
             fifoAlg.NewRecordInMainMemory(pageNumVirtual);
         }
 
@@ -211,7 +205,7 @@ public:
         //Word pageNumVirtual = ToPageAddr2(ToWordAddr(virtualLocation));
         //Word offsetInPage = ToPageOffset2(ToWordAddr(virtualLocation));
 
-        if (pageTable[pageNumVirtual][2] == false) {
+        if (!pageTable[pageNumVirtual][2]) {
             LoadPageIntoMemory(pageNumVirtual);
         }
 
@@ -263,30 +257,6 @@ private:
     FifoAlg fifoAlg;
 };
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 class IMem
 {
 public:
@@ -314,20 +284,20 @@ public:
 
     }
 
-    void Request(Word ip)                                   // sending request to fetch word
+    void Request(Word ip)
     {
         _requestedIp = ip;
         _waitCycles = latency;
     }
 
-    std::optional<Word> Response()                          // fetching word from requested ip - used for fetching instructions
+    std::optional<Word> Response()
     {
         if (_waitCycles > 0)
             return std::optional<Word>();
         return _mem.Read(_requestedIp);
     }
 
-    void Request(InstructionPtr &instr)                     // if instruction is load/store type - set requested_ip to instr->addr from instruction
+    void Request(InstructionPtr &instr)
     {
         if (instr->_type != IType::Ld && instr->_type != IType::St)
             return;
@@ -335,15 +305,15 @@ public:
         Request(instr->_addr);
     }
 
-    bool Response(InstructionPtr &instr)                    // checks whether the instruction is executed yet or not
+    bool Response(InstructionPtr &instr)
     {
-        if (instr->_type != IType::Ld && instr->_type != IType::St)  // if instruction type is not load or store - it's executed immediately, thus instruction is executed already
+        if (instr->_type != IType::Ld && instr->_type != IType::St)
             return true;
 
-        if (_waitCycles != 0)                               // if there are cycles to wait for - instruction is not executed yet
+        if (_waitCycles != 0)
             return false;
 
-        if (instr->_type == IType::Ld)                      // perform necessary operations and return true
+        if (instr->_type == IType::Ld)
             instr->_data = _mem.Read(instr->_addr);
         else if (instr->_type == IType::St)
             _mem.Write(instr->_addr, instr->_data);
@@ -376,95 +346,95 @@ public:
 
     void Request(Word ip)
     {
-        _tag = ToLineAddr(ip) / lineSizeBytes;                      // evaluating _tag value
+        _tag = ToLineAddr(ip) / lineSizeBytes;
         _cached = false;
         _waitCycles = _latency;
         for (auto & iter : _code_cache) {
-            if (iter.first == _tag) {                               // if corresponding tag is found
-                _line = iter.second;                                // get whole line from cache
-                _cached = true;                                     // set cached to true
-                _waitCycles = 0;                                    // instructions are fetched from cache immediately
+            if (iter.first == _tag) {
+                _line = iter.second;
+                _cached = true;
+                _waitCycles = 0;
                 break;
             }
         }
         _requestedIp = ip;
     }
 
-    std::optional<Word> Response()                                  // fetching instruction
+    std::optional<Word> Response()
     {
-        if (_waitCycles > 0)                                        // if not ready yet - return empty instruction
+        if (_waitCycles > 0)
             return std::optional<Word>();
 
-        if(_cached) {                                               // if instr is cached - return requested value from cache
+        if(_cached) {
             size_t offset = ToLineOffset(_requestedIp);
             _code_queue[_tag] = clock();
             return _line[offset];
         }
-        std::optional<Word> response = _mem.Read(_requestedIp);     // if instr is not cached - return from memory like usual but
-        Line new_line = Line();                                     // put the whole line in which instruction lives in cache
-        _requestedIp = ToLineAddr(_requestedIp);                    // set requested ip to line beginning
-        for (size_t i = 0; i < lineSizeWords; i++) {                // fill the line with 32 instructions
+        std::optional<Word> response = _mem.Read(_requestedIp);
+        Line new_line = Line();
+        _requestedIp = ToLineAddr(_requestedIp);
+        for (size_t i = 0; i < lineSizeWords; i++) {
             new_line[i] = _mem.Read(_requestedIp);
             _requestedIp += 4;
         }
-        auto new_record = std::make_pair(_tag, new_line);           // create new cache record assigning _tag value to its tag
-        if (_code_cache.size() >= codeCacheBytes / lineSizeBytes)   // if cache is full
+        auto new_record = std::make_pair(_tag, new_line);
+        if (_code_cache.size() >= codeCacheBytes / lineSizeBytes)
         {
-            auto min = *std::min_element(_code_queue.begin(), _code_queue.end(), CompareSecond()); // find line with less usage in queue containing tag-clock pair
-            _data_cache.erase(min.first);                           // after data is saved to memory from cache it can be removed from cache
+            auto min = *std::min_element(_code_queue.begin(), _code_queue.end(), CompareSecond());
+            _data_cache.erase(min.first);
             _code_queue.erase(min.first);
         }
-        _code_cache.push_back(new_record);                          // push new record in cache and to queue
+        _code_cache.push_back(new_record);
         _code_queue.insert({_tag, clock()});
         return response;
     }
 
 
-    void Request(InstructionPtr &instr)                             // if instruction is load/store type - set requested_ip to instr->addr from instruction
+    void Request(InstructionPtr &instr)
     {
         if (instr->_type != IType::Ld && instr->_type != IType::St)
             return;
 
-        _tag = ToLineAddr(instr->_addr) / lineSizeBytes;            // evaluating _tag value
+        _tag = ToLineAddr(instr->_addr) / lineSizeBytes;
         _cached = false;
         _waitCycles = _latency;
-        if (_data_cache.find(_tag) != _data_cache.end()) {          // if record tagged with _tag exists
-            _line = _data_cache[_tag].first;                        // get line of data from cache
-            _cached = true;                                         // set cached to true
-            _waitCycles = 3;                                        // set latency
+        if (_data_cache.find(_tag) != _data_cache.end()) {
+            _line = _data_cache[_tag].first;
+            _cached = true;
+            _waitCycles = 3;
         }
-        _requestedIp = instr->_addr;                                // set requested ip to data addr in instruction
+        _requestedIp = instr->_addr;
     }
 
-    bool Response(InstructionPtr &instr)                            // checks whether the instruction is executed yet or not
+    bool Response(InstructionPtr &instr)
     {
-        if (instr->_type != IType::Ld && instr->_type != IType::St) // if instruction type is not load or store - it's executed immediately, thus instruction is executed already
+        if (instr->_type != IType::Ld && instr->_type != IType::St)
             return true;
 
-        if (_waitCycles != 0)                                       // if there are cycles to wait for - instruction is not executed yet
+        if (_waitCycles != 0)
             return false;
 
         if(!_cached) {
             Line new_line = Line();
             Word line_begin = ToLineAddr(_requestedIp);
-            for (size_t i = 0; i < lineSizeWords; i++) {            // fill the line with 32 words from memory
+            for (size_t i = 0; i < lineSizeWords; i++) {
                 new_line[i] = _mem.Read(line_begin);
                 line_begin += 4;
             }
             std::pair<Line, bool> new_record = std::make_pair(new_line, true);
             if (_data_cache.size() >= dataCacheBytes / lineSizeBytes) {
-                auto min = std::min_element(_data_queue.begin(), _data_queue.end(), CompareSecond()); // find line with less usage in queue2 containing tag-clock pair
+                auto min = std::min_element(_data_queue.begin(), _data_queue.end(), CompareSecond());
                 auto tag_of_min = min->first;
 
                 if (!_data_cache[tag_of_min].second) {
                     size_t ip = tag_of_min * lineSizeBytes;
                     Line line = _data_cache[tag_of_min].first;
-                    for (auto iter = line.begin(); iter != line.end(); iter++) {            // iterate over line and write 32 words to memory
+                    for (auto iter = line.begin(); iter != line.end(); iter++) {
                         _mem.Write(ip, *iter);
                         ip += 4;
                     }
                 }
-                _data_cache.erase(tag_of_min);                                              // after data is saved to memory from cache it can be removed from cache
+                _data_cache.erase(tag_of_min);
                 _data_queue.erase(tag_of_min);
             }
             _data_cache.insert({_tag, new_record});
@@ -473,10 +443,10 @@ public:
 
         _data_queue[_tag] = clock();
         if(instr->_type == IType::Ld)
-            instr->_data = _data_cache[_tag].first[ToLineOffset(_requestedIp)];             // get data from cache
+            instr->_data = _data_cache[_tag].first[ToLineOffset(_requestedIp)];
         else {
-            _data_cache[_tag].first[ToLineOffset(_requestedIp)] = instr->_data;             // alter data in cache
-            _data_cache[_tag].second = false;                                               // data is not fresh anymore(ew)
+            _data_cache[_tag].first[ToLineOffset(_requestedIp)] = instr->_data;
+            _data_cache[_tag].second = false;
         }
         return true;
     }
@@ -496,8 +466,8 @@ private:
             return left.second < right.second;
         }
     };
-    std::map<size_t, clock_t> _code_queue;                           // key - _tag, value - last time accessed
-    std::map<size_t, clock_t> _data_queue;                           // key - _tag, value - last time accessed
+    std::map<size_t, clock_t> _code_queue;
+    std::map<size_t, clock_t> _data_queue;
     static constexpr size_t _latency = 152;
     Word _requestedIp = 0;
     size_t _waitCycles = 0;
@@ -505,8 +475,8 @@ private:
     size_t _tag;
     Line _line;
     MemoryStorage& _mem;
-    std::vector<std::pair<size_t, Line>> _code_cache;               // pair of tag and line
-    std::map<size_t, std::pair<Line, bool>> _data_cache;            // tag, line and flag indicating whether thr record is fresh or not
+    std::vector<std::pair<size_t, Line>> _code_cache;
+    std::map<size_t, std::pair<Line, bool>> _data_cache;
     bool _cached = false;
 };*/
 

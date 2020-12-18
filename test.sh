@@ -38,14 +38,14 @@ case $testResponse in
 	        multiply
 	        qsort
 	        vvadd
-#               towers
+               towers
 	     ); vmh_dir=programs/build/smallbenchmarks/bin;;
     3) asm_tests=(
 	        median
 	        multiply
 	        qsort
 	        vvadd
-#               towers
+               towers
 	     ); vmh_dir=programs/build/bigbenchmarks/bin;;
     *)  echo "ERROR: Unexpected response: $response" ; exit ;;
 esac
